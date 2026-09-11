@@ -1,0 +1,47 @@
+# SwiftLint configuration shared across all Syzygy Swift/SwiftUI repos
+opt_in_rules:
+  - empty_count
+  - closure_spacing
+  - explicit_init
+  - redundant_type_annotation
+
+disabled_rules:
+  - todo
+
+force_unwrapping: warning
+force_cast: warning
+
+trailing_whitespace:
+  severity: warning
+trailing_newline: warning
+
+line_length:
+  warning: 120
+  error: 200
+  ignores_comments: true
+  ignores_urls: true
+
+file_length:
+  warning: 400
+  error: 600
+
+type_body_length:
+  warning: 250
+  error: 400
+
+function_body_length:
+  warning: 60
+  error: 100
+
+identifier_name:
+  min_length: 2
+  excluded:
+    - id
+
+included:
+  - Sources
+  - Tests
+
+excluded:
+  - .build
+  - .swiftpm
