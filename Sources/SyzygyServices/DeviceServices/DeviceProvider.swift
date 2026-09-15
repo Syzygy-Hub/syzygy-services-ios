@@ -26,7 +26,7 @@ public protocol DeviceProvider: Sendable {
 public final class PlatformDeviceProvider: DeviceProvider, @unchecked Sendable {
 
     private let storage: KeychainStorageProvider
-    private static let deviceIdKey = StorageKey<String>(identifier: "com.syzygy.device.id")
+    private static let deviceIdKey = StorageKey<String>(identifier: "syzygy.device.uuid")
 
     private let lock = NSLock()
     nonisolated(unsafe) private var _cachedDeviceId: String?

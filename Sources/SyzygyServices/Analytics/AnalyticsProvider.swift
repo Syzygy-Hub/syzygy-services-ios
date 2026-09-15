@@ -11,6 +11,7 @@ public final class ConsoleAnalyticsProvider: SyzygyFoundation.AnalyticsProvider,
     private let lock = NSLock()
     nonisolated(unsafe) private var userProperties: [String: String] = [:]
     nonisolated(unsafe) private var _sessionId: String
+    nonisolated(unsafe) private var _lastTrackedProperties: [String: String]?
 
     /// The current session identifier (a UUID string generated at init).
     public var sessionId: String {
@@ -23,7 +24,16 @@ public final class ConsoleAnalyticsProvider: SyzygyFoundation.AnalyticsProvider,
     }
 
     public func track(_ event: AnalyticsEvent) {
-        print("[Analytics] event=\(event.name) properties=\(event.properties) ts=\(event.timestamp.millisecondsSinceEpoch)")
+        let sessionId = lock.withLock { _sessionId }
+        var enriched = event.properties
+        enriched["session_id"] = sessionId
+        lock.withLock { _lastTrackedProperties = enriched }
+        print("[Analytics] event=\(event.name) properties=\(enriched) ts=\(event.timestamp.millisecondsSinceEpoch)")
+    }
+
+    /// Returns the enriched properties of the most recently tracked event (for testing).
+    public func lastTrackedProperties() -> [String: String]? {
+        lock.withLock { _lastTrackedProperties }
     }
 
     public func identify(userId: String, traits: [String: String]) {

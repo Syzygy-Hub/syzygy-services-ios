@@ -53,4 +53,32 @@ struct DeviceProviderTests {
         )
         #expect(!provider.systemName.isEmpty)
     }
+
+    // MARK: - Item 1: Persistent UUID
+
+    @Test("deviceId is consistent across multiple calls on the same provider")
+    func deviceIdConsistentAcrossMultipleCalls() {
+        let provider = PlatformDeviceProvider(
+            storage: KeychainStorageProvider(service: "com.test.device.\(UUID().uuidString)")
+        )
+        let id1 = provider.deviceId
+        let id2 = provider.deviceId
+        let id3 = provider.deviceId
+        #expect(id1 == id2)
+        #expect(id2 == id3)
+    }
+
+    @Test("deviceId persists across provider re-instantiation using same storage")
+    func deviceIdPersistsAcrossReinstantiation() {
+        let service = "com.test.device.persist.\(UUID().uuidString)"
+        let storage = KeychainStorageProvider(service: service)
+        let provider1 = PlatformDeviceProvider(storage: storage)
+        let firstId = provider1.deviceId
+        // Re-instantiate a brand-new provider pointing at the same keychain service
+        let provider2 = PlatformDeviceProvider(storage: storage)
+        let secondId = provider2.deviceId
+        #expect(firstId == secondId, "UUID must survive re-instantiation")
+        #expect(UUID(uuidString: firstId) != nil, "Must be valid UUID format")
+        storage.clear() // cleanup
+    }
 }

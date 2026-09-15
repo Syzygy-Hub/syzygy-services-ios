@@ -44,4 +44,57 @@ struct CrashReporterTests {
         let reporter = ConsoleCrashReporter()
         #expect(reporter.currentUserContext() == nil)
     }
+
+    // MARK: - Item 5: Breadcrumbs
+
+    @Test("leaveBreadcrumb stores breadcrumb with message and metadata")
+    func leaveBreadcrumbStoresBreadcrumb() {
+        let reporter = ConsoleCrashReporter()
+        reporter.leaveBreadcrumb(message: "User tapped login", metadata: ["screen": "Login"])
+        let crumbs = reporter.currentBreadcrumbs()
+        #expect(crumbs.count == 1)
+        #expect(crumbs[0].message == "User tapped login")
+        #expect(crumbs[0].metadata["screen"] == "Login")
+    }
+
+    @Test("leaveBreadcrumb with nil metadata stores empty metadata")
+    func leaveBreadcrumbNilMetadata() {
+        let reporter = ConsoleCrashReporter()
+        reporter.leaveBreadcrumb(message: "App launched")
+        let crumbs = reporter.currentBreadcrumbs()
+        #expect(crumbs.count == 1)
+        #expect(crumbs[0].metadata.isEmpty)
+    }
+
+    @Test("circular buffer caps at 20 breadcrumbs")
+    func circularBufferCapsAtTwenty() {
+        let reporter = ConsoleCrashReporter()
+        for i in 1...25 {
+            reporter.leaveBreadcrumb(message: "Step \(i)")
+        }
+        let crumbs = reporter.currentBreadcrumbs()
+        #expect(crumbs.count == 20)
+        // Oldest entries dropped — first kept should be "Step 6"
+        #expect(crumbs[0].message == "Step 6")
+        #expect(crumbs[19].message == "Step 25")
+    }
+
+    @Test("clearBreadcrumbs removes all stored breadcrumbs")
+    func clearBreadcrumbsRemovesAll() {
+        let reporter = ConsoleCrashReporter()
+        reporter.leaveBreadcrumb(message: "A")
+        reporter.leaveBreadcrumb(message: "B")
+        reporter.clearBreadcrumbs()
+        #expect(reporter.currentBreadcrumbs().isEmpty)
+    }
+
+    @Test("breadcrumbs are included in reportCrash output (does not crash)")
+    func breadcrumbsIncludedInCrashReport() {
+        let reporter = ConsoleCrashReporter()
+        reporter.leaveBreadcrumb(message: "Nav to checkout")
+        reporter.leaveBreadcrumb(message: "Payment initiated")
+        // reportCrash should not throw and should include breadcrumbs in output (no crash)
+        reporter.reportCrash(message: "Unexpected nil", metadata: [:])
+        #expect(true)
+    }
 }

@@ -2,6 +2,28 @@ import Foundation
 import Security
 import SyzygyFoundation
 
+// MARK: - StorageServiceError
+
+/// A storage-layer error conforming to `SyzygyError`.
+public struct StorageServiceError: SyzygyError {
+    public let code: SyzygyErrorCode
+    public let message: String
+    public let severity: SyzygyErrorSeverity
+    public let underlyingError: (any Error)?
+
+    public init(
+        code: SyzygyErrorCode = .decodingFailed,
+        message: String,
+        severity: SyzygyErrorSeverity = .error,
+        underlyingError: (any Error)? = nil
+    ) {
+        self.code = code
+        self.message = message
+        self.severity = severity
+        self.underlyingError = underlyingError
+    }
+}
+
 // MARK: - UserDefaultsStorageProvider
 
 /// A `SyzygyFoundation.StorageProvider` backed by `UserDefaults` for non-sensitive data.
@@ -24,6 +46,30 @@ public final class UserDefaultsStorageProvider: SyzygyFoundation.StorageProvider
             }
             return try? decoder.decode(T.self, from: data)
         }
+    }
+
+    /// Retrieves the value for the given key, throwing a descriptive `StorageServiceError`
+    /// if data exists but cannot be decoded as `T`.
+    public func getOrThrow<T: Codable & Sendable>(_ key: StorageKey<T>) throws -> T? {
+        try lock.withLock {
+            guard let data = defaults.data(forKey: key.identifier) else {
+                return key.defaultValue
+            }
+            do {
+                return try decoder.decode(T.self, from: data)
+            } catch {
+                let storedType = Self.jsonTypeName(from: data)
+                throw StorageServiceError(
+                    message: "Type mismatch for key '\(key.identifier)': stored type is \(storedType), requested type is \(T.self)",
+                    underlyingError: error
+                )
+            }
+        }
+    }
+
+    private static func jsonTypeName(from data: Data) -> String {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) else { return "unknown" }
+        return String(describing: Swift.type(of: obj))
     }
 
     public func set<T: Codable & Sendable>(_ value: T, for key: StorageKey<T>) {
@@ -68,20 +114,45 @@ public final class KeychainStorageProvider: SyzygyFoundation.StorageProvider, @u
 
     public func get<T: Codable & Sendable>(_ key: StorageKey<T>) -> T? {
         lock.withLock {
-            let query: [String: Any] = [
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrService as String: service,
-                kSecAttrAccount as String: key.identifier,
-                kSecReturnData as String: true,
-                kSecMatchLimit as String: kSecMatchLimitOne
-            ]
-            var result: AnyObject?
-            let status = SecItemCopyMatching(query as CFDictionary, &result)
-            guard status == errSecSuccess, let data = result as? Data else {
-                return key.defaultValue
-            }
+            guard let data = keychainData(for: key.identifier) else { return key.defaultValue }
             return try? decoder.decode(T.self, from: data)
         }
+    }
+
+    /// Retrieves the value for the given key, throwing a descriptive `StorageServiceError`
+    /// if data exists but cannot be decoded as `T`.
+    public func getOrThrow<T: Codable & Sendable>(_ key: StorageKey<T>) throws -> T? {
+        try lock.withLock {
+            guard let data = keychainData(for: key.identifier) else { return key.defaultValue }
+            do {
+                return try decoder.decode(T.self, from: data)
+            } catch {
+                let storedType = Self.jsonTypeName(from: data)
+                throw StorageServiceError(
+                    message: "Type mismatch for key '\(key.identifier)': stored type is \(storedType), requested type is \(T.self)",
+                    underlyingError: error
+                )
+            }
+        }
+    }
+
+    private func keychainData(for identifier: String) -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: identifier,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let data = result as? Data else { return nil }
+        return data
+    }
+
+    private static func jsonTypeName(from data: Data) -> String {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) else { return "unknown" }
+        return String(describing: Swift.type(of: obj))
     }
 
     public func set<T: Codable & Sendable>(_ value: T, for key: StorageKey<T>) {
