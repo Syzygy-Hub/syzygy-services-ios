@@ -132,6 +132,25 @@ public final class SyzygyAuthProvider: SyzygyFoundation.AuthProvider, @unchecked
     }
 }
 
+// MARK: - Biometric Auth Extension
+
+/// Default biometric stub implementations available to all `AuthProvider` conformers.
+///
+/// These defaults always return `false` / `.unauthenticated`.
+/// Wire `SyzygyAuthProvider` to `LAContext` for real Face ID / Touch ID support.
+public extension SyzygyFoundation.AuthProvider {
+    /// Returns whether biometric authentication is available on this device.
+    /// - Note: Always returns `false` in the stub. Wire to
+    ///   `LAContext.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics)` for real Face ID / Touch ID.
+    func canUseBiometric() -> Bool { false }
+
+    /// Authenticates the user with biometrics (Face ID / Touch ID).
+    /// - Parameter reason: The localized reason shown to the user in the system prompt.
+    /// - Returns: `.authenticated` if successful, `.unauthenticated` if biometrics unavailable or failed.
+    /// - Note: Stub always returns `.unauthenticated`. Wire to `LAContext.evaluatePolicy` for real usage.
+    func authenticateWithBiometric(reason: String) async -> AuthState { .unauthenticated }
+}
+
 // MARK: - Errors
 
 /// Errors produced by `SyzygyAuthProvider`.
@@ -148,6 +167,7 @@ public enum AuthProviderError: Error, Sendable {
 // MARK: - Legacy aliases
 
 /// Legacy JWT in-memory provider retained for source compatibility.
+@available(*, deprecated, renamed: "SyzygyAuthProvider")
 public final class JWTAuthProvider: @unchecked Sendable {
     nonisolated(unsafe) private var _accessToken: String?
 
@@ -163,10 +183,19 @@ public final class JWTAuthProvider: @unchecked Sendable {
     /// Clears the current access token.
     public func clearToken() { _accessToken = nil }
 
-    /// Stub refresh — always throws.
+    /// Stub refresh — throws `refreshNotConfigured` as this class has no network client.
+    /// Migrate to `SyzygyAuthProvider` with a configured `networkClient` and `refreshEndpoint`.
     public func refreshToken() async throws -> String {
-        throw AuthProviderError.refreshNotImplemented
+        throw AuthProviderError.refreshNotConfigured
     }
+
+    /// Returns whether biometric authentication is available on this device.
+    /// Always returns `false` in this stub.
+    public func canUseBiometric() -> Bool { false }
+
+    /// Authenticates the user with biometrics.
+    /// Always returns `.unauthenticated` in this stub.
+    public func authenticateWithBiometric(reason: String) async -> AuthState { .unauthenticated }
 }
 
 /// Alias preserved for source compatibility.

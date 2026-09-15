@@ -16,7 +16,7 @@ public enum WebSocketConnectionState: Equatable, Sendable {
 // MARK: - WebSocketMessage
 
 /// A message received from a WebSocket connection.
-public enum WebSocketMessage: Sendable {
+public enum WebSocketMessage: Equatable, Sendable {
     /// A UTF-8 text message.
     case text(String)
     /// A binary data message.
@@ -39,6 +39,13 @@ public protocol WebSocketProvider: Sendable {
     func send(data: Data) async throws
     /// Returns an `AsyncStream` of incoming messages. Yields until disconnected.
     func messages() async -> AsyncStream<WebSocketMessage>
+
+    /// Returns an `AsyncStream` of incoming **binary** frames only.
+    ///
+    /// Binary frames are emitted here as raw `Data` without any UTF-8 conversion,
+    /// matching the `binaryMessages: Flow<ByteArray>` contract on Android.
+    /// The stream remains active until `disconnect()` is called.
+    func binaryMessages() async -> AsyncStream<Data>
 }
 
 // MARK: - Errors
@@ -61,7 +68,9 @@ public actor URLSessionWebSocketProvider: WebSocketProvider {
     private var task: URLSessionWebSocketTask?
     private var _connectionState: WebSocketConnectionState = .disconnected
     private var continuations: [UUID: AsyncStream<WebSocketMessage>.Continuation] = [:]
+    private var binaryContinuations: [UUID: AsyncStream<Data>.Continuation] = [:]
     private var currentURL: URL?
+    private var isDisposed = false
 
     /// Initialises the provider.
     /// - Parameters:
@@ -75,7 +84,17 @@ public actor URLSessionWebSocketProvider: WebSocketProvider {
     /// The current connection state.
     public var connectionState: WebSocketConnectionState { _connectionState }
 
+    /// Closes the connection, cancels all tasks, clears observers, and marks the provider as
+    /// disposed. After calling this, `connect(to:)`, `send(text:)`, and `send(data:)` throw
+    /// `WebSocketError.notConnected`.
+    public func dispose() {
+        isDisposed = true
+        disconnect()
+        session.invalidateAndCancel()
+    }
+
     public func connect(to url: URL) async throws {
+        guard !isDisposed else { throw WebSocketError.notConnected }
         _connectionState = .connecting
         currentURL = url
         task = session.webSocketTask(with: url)
@@ -91,6 +110,9 @@ public actor URLSessionWebSocketProvider: WebSocketProvider {
         let conts = continuations
         continuations.removeAll()
         for cont in conts.values { cont.finish() }
+        let binConts = binaryContinuations
+        binaryContinuations.removeAll()
+        for cont in binConts.values { cont.finish() }
     }
 
     public func send(text: String) async throws {
@@ -113,10 +135,28 @@ public actor URLSessionWebSocketProvider: WebSocketProvider {
         }
     }
 
+    /// Returns an `AsyncStream` that yields only the binary frames received from the server.
+    ///
+    /// Binary frames are emitted here as raw `Data` without any UTF-8 conversion,
+    /// matching the `binaryMessages: Flow<ByteArray>` contract on Android.
+    public func binaryMessages() -> AsyncStream<Data> {
+        AsyncStream { continuation in
+            let id = UUID()
+            continuation.onTermination = { [weak self] _ in
+                Task { await self?.removeBinaryContinuation(id: id) }
+            }
+            self.binaryContinuations[id] = continuation
+        }
+    }
+
     // MARK: - Private
 
     private func removeContinuation(id: UUID) {
         continuations.removeValue(forKey: id)
+    }
+
+    private func removeBinaryContinuation(id: UUID) {
+        binaryContinuations.removeValue(forKey: id)
     }
 
     private func startReceiving() {
@@ -132,7 +172,10 @@ public actor URLSessionWebSocketProvider: WebSocketProvider {
             let wsMessage: WebSocketMessage
             switch message {
             case .string(let text): wsMessage = .text(text)
-            case .data(let data): wsMessage = .data(data)
+            case .data(let data):
+                wsMessage = .data(data)
+                // Also fan out to dedicated binary consumers (mirrors Android binaryMessages channel)
+                for cont in binaryContinuations.values { cont.yield(data) }
             @unknown default:
                 await receiveLoop(attempt: 0)
                 return
@@ -154,6 +197,9 @@ public actor URLSessionWebSocketProvider: WebSocketProvider {
                 let conts = continuations
                 continuations.removeAll()
                 for cont in conts.values { cont.finish() }
+                let binConts = binaryContinuations
+                binaryContinuations.removeAll()
+                for cont in binConts.values { cont.finish() }
             }
         }
     }

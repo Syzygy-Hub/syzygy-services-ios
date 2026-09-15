@@ -3,6 +3,20 @@ import Foundation
 @testable import SyzygyServices
 import SyzygyFoundation
 
+// MARK: - MockLogger
+
+/// A thread-safe `LoggerProtocol` that records all log entries for test assertions.
+final class MockLogger: LoggerProtocol, @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var entries: [LogEntry] = []
+
+    func log(_ entry: LogEntry) {
+        lock.withLock { entries.append(entry) }
+    }
+
+    var messages: [String] { lock.withLock { entries.map(\.message) } }
+}
+
 // MARK: - Mock URLProtocol
 
 final class MockURLProtocol: URLProtocol, @unchecked Sendable {
@@ -133,6 +147,106 @@ struct NetworkClientTests {
             Issue.record("Expected timeout error")
         } catch let error as NetworkServiceError {
             #expect(error.code == .timeout)
+        }
+    }
+
+    // MARK: - Item 3: Request/response logging
+
+    @Test("Logger records request message on successful call")
+    func loggerRecordsRequest() async throws {
+        let logger = MockLogger()
+        MockURLProtocol.requestHandler = { _ in makeResponse(statusCode: 200) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let client = URLSessionNetworkClient(
+            session: URLSession(configuration: config),
+            maxRetries: 0,
+            logger: logger
+        )
+        let request = NetworkRequest(url: "https://example.com/api", method: .get)
+        _ = try await client.execute(request)
+        let msgs = logger.messages
+        #expect(msgs.contains(where: { $0.contains("GET") && $0.contains("example.com") }))
+    }
+
+    @Test("Logger records response message on success")
+    func loggerRecordsResponse() async throws {
+        let logger = MockLogger()
+        MockURLProtocol.requestHandler = { _ in makeResponse(statusCode: 200) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let client = URLSessionNetworkClient(
+            session: URLSession(configuration: config),
+            maxRetries: 0,
+            logger: logger
+        )
+        let request = NetworkRequest(url: "https://example.com/api", method: .get)
+        _ = try await client.execute(request)
+        let msgs = logger.messages
+        // Response line should contain status code
+        #expect(msgs.contains(where: { $0.contains("200") }))
+    }
+
+    @Test("Logger records error message on failure")
+    func loggerRecordsError() async throws {
+        let logger = MockLogger()
+        MockURLProtocol.requestHandler = { _ in makeResponse(statusCode: 404) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let client = URLSessionNetworkClient(
+            session: URLSession(configuration: config),
+            maxRetries: 0,
+            logger: logger
+        )
+        let request = NetworkRequest(url: "https://example.com/missing", method: .get)
+        _ = try? await client.execute(request)
+        let msgs = logger.messages
+        // Error path should log something containing the URL
+        #expect(msgs.contains(where: { $0.contains("example.com") }))
+    }
+
+    @Test("Authorization header is stripped from request log")
+    func authorizationHeaderStrippedFromLog() async throws {
+        let logger = MockLogger()
+        MockURLProtocol.requestHandler = { _ in makeResponse(statusCode: 200) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let client = URLSessionNetworkClient(
+            session: URLSession(configuration: config),
+            maxRetries: 0,
+            logger: logger
+        )
+        let request = NetworkRequest(
+            url: "https://example.com/api",
+            method: .get,
+            headers: ["Authorization": "Bearer supersecret", "X-Custom": "visible"]
+        )
+        _ = try await client.execute(request)
+        // None of the logged messages should contain the secret token
+        let msgs = logger.messages
+        #expect(!msgs.contains(where: { $0.contains("supersecret") }))
+        // Non-auth headers may still appear
+        #expect(msgs.contains(where: { $0.contains("example.com") }))
+    }
+
+    // MARK: - Item 7: dispose()
+
+    @Test("execute throws after dispose()")
+    func executeThrowsAfterDispose() async throws {
+        MockURLProtocol.requestHandler = { _ in makeResponse(statusCode: 200) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let client = URLSessionNetworkClient(
+            session: URLSession(configuration: config),
+            maxRetries: 0
+        )
+        await client.dispose()
+        let request = NetworkRequest(url: "https://example.com/api", method: .get)
+        do {
+            _ = try await client.execute(request)
+            Issue.record("Expected error after dispose")
+        } catch let error as NetworkServiceError {
+            #expect(error.code == .cancelled)
         }
     }
 }

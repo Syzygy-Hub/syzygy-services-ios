@@ -28,6 +28,9 @@ public final class NetworkedRemoteConfigProvider: RemoteConfigProvider, @uncheck
     private let client: any NetworkClientProtocol
     private let endpoint: String
     private var defaults: [String: Any]
+    /// The cache time-to-live in seconds. A cached response is returned without a network
+    /// request while `Date() - lastFetchDate < cacheTtlSeconds`.
+    public let cacheTtlSeconds: TimeInterval
 
     private let lock = NSLock()
     nonisolated(unsafe) private var store: [String: Any]
@@ -38,18 +41,34 @@ public final class NetworkedRemoteConfigProvider: RemoteConfigProvider, @uncheck
     ///   - client: The network client used to fetch remote config.
     ///   - endpoint: The URL string of the remote config endpoint.
     ///   - defaults: Default values returned when a key is not present in the fetched config.
+    ///   - cacheTtlSeconds: How long (in seconds) a successful fetch result is considered fresh
+    ///     before the next `fetch()` call hits the network again. Defaults to 3600 (one hour).
     public init(
         client: any NetworkClientProtocol,
         endpoint: String,
-        defaults: [String: Any] = [:]
+        defaults: [String: Any] = [:],
+        cacheTtlSeconds: TimeInterval = 3600
     ) {
         self.client = client
         self.endpoint = endpoint
         self.defaults = defaults
+        self.cacheTtlSeconds = cacheTtlSeconds
         self.store = defaults
     }
 
+    /// Fetches the remote configuration, respecting the cache TTL.
+    ///
+    /// If a successful fetch occurred within `cacheTtlSeconds`, this method returns
+    /// immediately without making a network request. Otherwise it fetches from the
+    /// configured endpoint and updates both the in-memory store and `lastFetchDate`.
     public func fetch() async {
+        // Return cached result if still within TTL
+        let isFresh = lock.withLock { () -> Bool in
+            guard let last = _lastFetchDate else { return false }
+            return Date().timeIntervalSince(last) < cacheTtlSeconds
+        }
+        guard !isFresh else { return }
+
         let request = NetworkRequest(url: endpoint, method: .get)
         do {
             let response = try await client.execute(request)
