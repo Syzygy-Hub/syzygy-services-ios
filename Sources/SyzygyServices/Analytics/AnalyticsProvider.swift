@@ -18,6 +18,9 @@ public final class ConsoleAnalyticsProvider: SyzygyFoundation.AnalyticsProvider,
         lock.withLock { _sessionId }
     }
 
+    /// Output sink — defaults to `print`. Override in tests to capture log lines.
+    nonisolated(unsafe) internal var logger: (String) -> Void = { print($0) }
+
     /// Initialises the provider, generating a new session ID.
     public init() {
         self._sessionId = UUID().uuidString
@@ -28,7 +31,8 @@ public final class ConsoleAnalyticsProvider: SyzygyFoundation.AnalyticsProvider,
         var enriched = event.properties
         enriched["session_id"] = sessionId
         lock.withLock { _lastTrackedProperties = enriched }
-        print("[Analytics] event=\(event.name) properties=\(enriched) ts=\(event.timestamp.millisecondsSinceEpoch)")
+        let redacted = RedactionPolicy.redactMap(enriched)
+        logger("[Analytics] event=\(event.name) properties=\(redacted) ts=\(event.timestamp.millisecondsSinceEpoch)")
     }
 
     /// Returns the enriched properties of the most recently tracked event (for testing).
@@ -41,7 +45,9 @@ public final class ConsoleAnalyticsProvider: SyzygyFoundation.AnalyticsProvider,
             userProperties["userId"] = userId
             traits.forEach { userProperties[$0.key] = $0.value }
         }
-        print("[Analytics] identify userId=\(userId) traits=\(traits)")
+        let redactedUserId = RedactionPolicy.redact(key: "userId", value: userId)
+        let redactedTraits = RedactionPolicy.redactMap(traits)
+        logger("[Analytics] identify userId=\(redactedUserId) traits=\(redactedTraits)")
     }
 
     public func reset() {
@@ -49,7 +55,7 @@ public final class ConsoleAnalyticsProvider: SyzygyFoundation.AnalyticsProvider,
             userProperties.removeAll()
             _sessionId = UUID().uuidString
         }
-        print("[Analytics] reset")
+        logger("[Analytics] reset")
     }
 
     /// Tracks a screen view event with the given screen name.

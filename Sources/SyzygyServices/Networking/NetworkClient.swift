@@ -64,13 +64,16 @@ public struct TaskBackoffClock: BackoffClock {
 public actor URLSessionNetworkClient: NetworkClientProtocol {
 
     private let session: URLSession
+    private let ownsSession: Bool
     private let interceptors: [any RequestInterceptor]
     private let maxRetries: Int
     private let clock: any BackoffClock
     private let logger: (any LoggerProtocol)?
     private var isDisposed = false
 
-    /// Initialises the client.
+    /// Initialises the client with an injected URLSession.
+    ///
+    /// The caller retains ownership of the session; `dispose()` will **not** invalidate it.
     /// - Parameters:
     ///   - session: The URLSession to use. Defaults to `.shared`.
     ///   - interceptors: Request/response interceptors applied in order.
@@ -86,6 +89,31 @@ public actor URLSessionNetworkClient: NetworkClientProtocol {
         logger: (any LoggerProtocol)? = nil
     ) {
         self.session = session
+        self.ownsSession = false
+        self.interceptors = interceptors
+        self.maxRetries = maxRetries
+        self.clock = clock
+        self.logger = logger
+    }
+
+    /// Initialises the client by creating a new URLSession internally.
+    ///
+    /// The client owns the created session and will invalidate it on `dispose()`.
+    /// - Parameters:
+    ///   - configuration: URLSession configuration for the internally-created session.
+    ///   - interceptors: Request/response interceptors applied in order.
+    ///   - maxRetries: Maximum retry attempts with exponential backoff (default 3).
+    ///   - clock: Back-off clock used for retry delays.
+    ///   - logger: Optional logger for diagnostics.
+    public init(
+        configuration: URLSessionConfiguration,
+        interceptors: [any RequestInterceptor] = [],
+        maxRetries: Int = 3,
+        clock: any BackoffClock = TaskBackoffClock(),
+        logger: (any LoggerProtocol)? = nil
+    ) {
+        self.session = URLSession(configuration: configuration)
+        self.ownsSession = true
         self.interceptors = interceptors
         self.maxRetries = maxRetries
         self.clock = clock
@@ -94,9 +122,13 @@ public actor URLSessionNetworkClient: NetworkClientProtocol {
 
     /// Cancels all pending tasks and marks the client as disposed.
     /// After calling this, `execute(_:)` throws `NetworkServiceError` with code `.cancelled`.
+    /// The underlying URLSession is only invalidated when the client owns it (i.e. it was
+    /// created via `init(configuration:…)`). Injected sessions are left intact.
     public func dispose() {
         isDisposed = true
-        session.invalidateAndCancel()
+        if ownsSession {
+            session.invalidateAndCancel()
+        }
     }
 
     /// Executes the given network request, applying interceptors and retry logic.
@@ -104,10 +136,11 @@ public actor URLSessionNetworkClient: NetworkClientProtocol {
         guard !isDisposed else {
             throw NetworkServiceError(code: .cancelled, message: "NetworkClient has been disposed")
         }
-        // Log request — omit Authorization header to avoid leaking credentials.
+        // Log request — redact sensitive headers to avoid leaking credentials.
         if let logger {
-            var safeHeaders = request.headers
-            safeHeaders.removeValue(forKey: "Authorization")
+            let safeHeaders = request.headers.filter { pair in
+                !Self.redactedHeaders.contains(pair.key.lowercased())
+            }
             logger.debug(
                 "→ \(request.method.rawValue) \(request.url)",
                 metadata: [
@@ -124,6 +157,11 @@ public actor URLSessionNetworkClient: NetworkClientProtocol {
     }
 
     // MARK: - Private
+
+    /// Headers whose values must never appear in logs. Comparison is case-insensitive.
+    private static let redactedHeaders: Set<String> = [
+        "authorization", "cookie", "x-api-key", "proxy-authorization"
+    ]
 
     private func executeWithRetry(_ request: NetworkRequest, attempt: Int) async throws -> NetworkResponse {
         do {
@@ -147,7 +185,8 @@ public actor URLSessionNetworkClient: NetworkClientProtocol {
             }
             return response
         } catch let error as NetworkServiceError {
-            logger?.error("✗ \(request.method.rawValue) \(request.url)", error: error, metadata: ["code": error.code.rawValue])
+            let meta = ["code": error.code.rawValue]
+            logger?.error("✗ \(request.method.rawValue) \(request.url)", error: error, metadata: meta)
             throw error
         } catch {
             if attempt < maxRetries && isRetryable(error) {
@@ -155,7 +194,8 @@ public actor URLSessionNetworkClient: NetworkClientProtocol {
                 return try await executeWithRetry(request, attempt: attempt + 1)
             }
             let mapped = mapError(error)
-            logger?.error("✗ \(request.method.rawValue) \(request.url)", error: mapped, metadata: ["code": mapped.code.rawValue])
+            let meta = ["code": mapped.code.rawValue]
+            logger?.error("✗ \(request.method.rawValue) \(request.url)", error: mapped, metadata: meta)
             throw mapped
         }
     }
@@ -198,7 +238,9 @@ public actor URLSessionNetworkClient: NetworkClientProtocol {
             return NetworkServiceError(code: .cancelled, message: "Request cancelled", underlyingError: error)
         }
         if nsError.domain == NSURLErrorDomain {
-            return NetworkServiceError(code: .networkUnavailable, message: nsError.localizedDescription, underlyingError: error)
+            return NetworkServiceError(
+                code: .networkUnavailable, message: nsError.localizedDescription, underlyingError: error
+            )
         }
         return NetworkServiceError(code: .unknown, message: error.localizedDescription, underlyingError: error)
     }
@@ -206,12 +248,26 @@ public actor URLSessionNetworkClient: NetworkClientProtocol {
     private func isRetryable(_ error: any Error) -> Bool {
         let nsError = error as NSError
         guard nsError.domain == NSURLErrorDomain else { return false }
-        let retryCodes = [NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost, NSURLErrorNotConnectedToInternet]
+        let retryCodes: [Int] = [
+            NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost, NSURLErrorNotConnectedToInternet
+        ]
         return retryCodes.contains(nsError.code)
     }
 
+    // Canonical backoff policy (all 4 platforms must match):
+    // delay = random(0, min(cap, base * multiplier^attempt))
+    private static let backoffBaseMs: Double = 500
+    private static let backoffMultiplier: Double = 2.0
+    private static let backoffCapMs: Double = 8_000
+    static let maxRetryAttempts: Int = 3
+
     private func backoff(_ attempt: Int) async throws {
-        let nanoseconds = UInt64(pow(2.0, Double(attempt)) * 1_000_000_000)
+        let base = URLSessionNetworkClient.backoffBaseMs
+        let cap = URLSessionNetworkClient.backoffCapMs
+        let multiplier = URLSessionNetworkClient.backoffMultiplier
+        let ceiling = min(cap, base * pow(multiplier, Double(attempt)))
+        let delayMs = Double.random(in: 0...ceiling)
+        let nanoseconds = UInt64(delayMs * 1_000_000)
         try await clock.sleep(nanoseconds: nanoseconds)
     }
 }

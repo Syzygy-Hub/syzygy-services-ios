@@ -150,83 +150,125 @@ struct NetworkClientTests {
         }
     }
 
+    // MARK: - Helpers
+
+    private func makeLoggerClient(statusCode: Int = 200, logger: MockLogger) -> URLSessionNetworkClient {
+        MockURLProtocol.requestHandler = { _ in makeResponse(statusCode: statusCode) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        return URLSessionNetworkClient(session: URLSession(configuration: config), maxRetries: 0, logger: logger)
+    }
+
     // MARK: - Item 3: Request/response logging
 
     @Test("Logger records request message on successful call")
     func loggerRecordsRequest() async throws {
         let logger = MockLogger()
-        MockURLProtocol.requestHandler = { _ in makeResponse(statusCode: 200) }
-        let config = URLSessionConfiguration.ephemeral
-        config.protocolClasses = [MockURLProtocol.self]
-        let client = URLSessionNetworkClient(
-            session: URLSession(configuration: config),
-            maxRetries: 0,
-            logger: logger
-        )
-        let request = NetworkRequest(url: "https://example.com/api", method: .get)
-        _ = try await client.execute(request)
-        let msgs = logger.messages
-        #expect(msgs.contains(where: { $0.contains("GET") && $0.contains("example.com") }))
+        let client = makeLoggerClient(logger: logger)
+        _ = try await client.execute(NetworkRequest(url: "https://example.com/api", method: .get))
+        #expect(logger.messages.contains(where: { $0.contains("GET") && $0.contains("example.com") }))
     }
 
     @Test("Logger records response message on success")
     func loggerRecordsResponse() async throws {
         let logger = MockLogger()
-        MockURLProtocol.requestHandler = { _ in makeResponse(statusCode: 200) }
-        let config = URLSessionConfiguration.ephemeral
-        config.protocolClasses = [MockURLProtocol.self]
-        let client = URLSessionNetworkClient(
-            session: URLSession(configuration: config),
-            maxRetries: 0,
-            logger: logger
-        )
-        let request = NetworkRequest(url: "https://example.com/api", method: .get)
-        _ = try await client.execute(request)
-        let msgs = logger.messages
-        // Response line should contain status code
-        #expect(msgs.contains(where: { $0.contains("200") }))
+        let client = makeLoggerClient(logger: logger)
+        _ = try await client.execute(NetworkRequest(url: "https://example.com/api", method: .get))
+        #expect(logger.messages.contains(where: { $0.contains("200") }))
     }
 
     @Test("Logger records error message on failure")
     func loggerRecordsError() async throws {
         let logger = MockLogger()
-        MockURLProtocol.requestHandler = { _ in makeResponse(statusCode: 404) }
-        let config = URLSessionConfiguration.ephemeral
-        config.protocolClasses = [MockURLProtocol.self]
-        let client = URLSessionNetworkClient(
-            session: URLSession(configuration: config),
-            maxRetries: 0,
-            logger: logger
-        )
-        let request = NetworkRequest(url: "https://example.com/missing", method: .get)
-        _ = try? await client.execute(request)
-        let msgs = logger.messages
-        // Error path should log something containing the URL
-        #expect(msgs.contains(where: { $0.contains("example.com") }))
+        let client = makeLoggerClient(statusCode: 404, logger: logger)
+        _ = try? await client.execute(NetworkRequest(url: "https://example.com/missing", method: .get))
+        #expect(logger.messages.contains(where: { $0.contains("example.com") }))
     }
 
     @Test("Authorization header is stripped from request log")
     func authorizationHeaderStrippedFromLog() async throws {
         let logger = MockLogger()
-        MockURLProtocol.requestHandler = { _ in makeResponse(statusCode: 200) }
-        let config = URLSessionConfiguration.ephemeral
-        config.protocolClasses = [MockURLProtocol.self]
-        let client = URLSessionNetworkClient(
-            session: URLSession(configuration: config),
-            maxRetries: 0,
-            logger: logger
-        )
+        let client = makeLoggerClient(logger: logger)
         let request = NetworkRequest(
             url: "https://example.com/api",
             method: .get,
             headers: ["Authorization": "Bearer supersecret", "X-Custom": "visible"]
         )
         _ = try await client.execute(request)
-        // None of the logged messages should contain the secret token
         let msgs = logger.messages
         #expect(!msgs.contains(where: { $0.contains("supersecret") }))
-        // Non-auth headers may still appear
         #expect(msgs.contains(where: { $0.contains("example.com") }))
+    }
+
+    // MARK: - HI-07: case-insensitive header redaction
+
+    @Test("Lowercase authorization header value is redacted from log")
+    func lowercaseAuthorizationHeaderRedacted() async throws {
+        let logger = MockLogger()
+        let client = makeLoggerClient(logger: logger)
+        let request = NetworkRequest(
+            url: "https://example.com/api", method: .get,
+            headers: ["authorization": "Bearer lowercase-secret"]
+        )
+        _ = try await client.execute(request)
+        #expect(!logger.messages.contains(where: { $0.contains("lowercase-secret") }))
+    }
+
+    @Test("Cookie header value is redacted from log")
+    func cookieHeaderRedacted() async throws {
+        let logger = MockLogger()
+        let client = makeLoggerClient(logger: logger)
+        let request = NetworkRequest(
+            url: "https://example.com/api", method: .get,
+            headers: ["cookie": "session=abc123"]
+        )
+        _ = try await client.execute(request)
+        #expect(!logger.messages.contains(where: { $0.contains("abc123") }))
+    }
+
+    @Test("X-Api-Key header value is redacted from log")
+    func xApiKeyHeaderRedacted() async throws {
+        let logger = MockLogger()
+        let client = makeLoggerClient(logger: logger)
+        let request = NetworkRequest(
+            url: "https://example.com/api", method: .get,
+            headers: ["x-api-key": "my-secret-key"]
+        )
+        _ = try await client.execute(request)
+        #expect(!logger.messages.contains(where: { $0.contains("my-secret-key") }))
+    }
+
+    @Test("X-Custom-Header value is NOT redacted from log")
+    func customHeaderNotRedacted() async throws {
+        let logger = MockLogger()
+        let client = makeLoggerClient(logger: logger)
+        let request = NetworkRequest(
+            url: "https://example.com/api", method: .get,
+            headers: ["X-Custom-Header": "visible-value"]
+        )
+        _ = try await client.execute(request)
+        let allText = logger.entries.flatMap { [$0.message] + $0.metadata.values }.joined()
+        #expect(allText.contains("visible-value"))
+    }
+
+    // MARK: - MED-10: Concurrency
+
+    @Test("10 concurrent requests all complete without crash")
+    func tenConcurrentRequestsComplete() async throws {
+        MockURLProtocol.requestHandler = { _ in makeResponse(statusCode: 200, body: Data("{\"ok\":true}".utf8)) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let client = URLSessionNetworkClient(session: URLSession(configuration: config), maxRetries: 0)
+        try await withThrowingTaskGroup(of: NetworkResponse.self) { group in
+            for _ in 0..<10 {
+                group.addTask {
+                    try await client.execute(NetworkRequest(url: "https://example.com/api", method: .get))
+                }
+            }
+            for try await response in group {
+                #expect(response.statusCode == 200)
+            }
+        }
     }
 
     // MARK: - Item 7: dispose()

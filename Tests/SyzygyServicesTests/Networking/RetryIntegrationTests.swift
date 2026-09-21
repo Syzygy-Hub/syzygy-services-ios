@@ -187,7 +187,7 @@ struct RetryIntegrationTests {
 
         // The last 500 after exhausted retries should still be returned (not throw for 5xx unless
         // the implementation chooses to; the key assertion is the total request count).
-        let _ = try? await client.execute(request)
+        _ = try? await client.execute(request)
 
         let count = controller.requestCount
         // Should be initial attempt + maxRetries attempts (not more)
@@ -293,10 +293,9 @@ private func makeClockClient(
 
 /// Deterministic tests for exponential back-off delay scheduling.
 ///
-/// Uses `MockBackoffClock` to verify that the delay between each retry follows the
-/// `2^attempt` second formula (expressed in nanoseconds) — matching the Android
-/// coroutine-test-scheduler pattern where the virtual clock is advanced rather than
-/// waiting on real wall time.
+/// Uses `MockBackoffClock` to verify that each retry delay falls within its canonical
+/// jitter range — matching the Android coroutine-test-scheduler pattern where the
+/// virtual clock is advanced rather than waiting on real wall time.
 @Suite("Retry Backoff Injectable Clock", .serialized)
 struct RetryBackoffClockTests {
 
@@ -313,7 +312,7 @@ struct RetryBackoffClockTests {
         #expect(clock.recordedDelays.isEmpty)
     }
 
-    @Test("One delay recorded for a single retry (2^0 seconds in nanoseconds)")
+    @Test("One delay recorded for a single retry within [0, 500 ms] range")
     func oneDelayOnFirstRetry() async throws {
         let clock = MockBackoffClock()
         let controller = RetryMockController()
@@ -325,11 +324,11 @@ struct RetryBackoffClockTests {
         _ = try await client.execute(request)
 
         #expect(clock.recordedDelays.count == 1)
-        // attempt 0 → 2^0 * 1_000_000_000 = 1_000_000_000 ns
-        #expect(clock.recordedDelays[0] == 1_000_000_000)
+        // attempt 0 → full jitter: random in [0, 500 ms] = [0, 500_000_000 ns]
+        #expect(clock.recordedDelays[0] <= 500_000_000)
     }
 
-    @Test("Two delays recorded for two retries with exponential values")
+    @Test("Two delays recorded for two retries within jitter ranges")
     func twoDelaysExponentialBackoff() async throws {
         let clock = MockBackoffClock()
         let controller = RetryMockController()
@@ -342,13 +341,12 @@ struct RetryBackoffClockTests {
         _ = try await client.execute(request)
 
         #expect(clock.recordedDelays.count == 2)
-        // attempt 0 → 1_000_000_000 ns (1 s)
-        // attempt 1 → 2_000_000_000 ns (2 s)
-        #expect(clock.recordedDelays[0] == 1_000_000_000)
-        #expect(clock.recordedDelays[1] == 2_000_000_000)
+        // attempt 0 → [0, 500 ms]; attempt 1 → [0, 1000 ms]
+        #expect(clock.recordedDelays[0] <= 500_000_000)
+        #expect(clock.recordedDelays[1] <= 1_000_000_000)
     }
 
-    @Test("Three delays recorded for maxRetries=3 exhausted")
+    @Test("Three delays recorded for maxRetries=3 exhausted within jitter ranges")
     func threeDelaysWhenMaxRetriesExhausted() async throws {
         let clock = MockBackoffClock()
         let controller = RetryMockController()
@@ -360,9 +358,10 @@ struct RetryBackoffClockTests {
 
         // 3 retries means 3 sleeps: attempts 0, 1, 2
         #expect(clock.recordedDelays.count == 3)
-        #expect(clock.recordedDelays[0] == 1_000_000_000)
-        #expect(clock.recordedDelays[1] == 2_000_000_000)
-        #expect(clock.recordedDelays[2] == 4_000_000_000)
+        // attempt 0 → [0, 500 ms]; attempt 1 → [0, 1000 ms]; attempt 2 → [0, 2000 ms]
+        #expect(clock.recordedDelays[0] <= 500_000_000)
+        #expect(clock.recordedDelays[1] <= 1_000_000_000)
+        #expect(clock.recordedDelays[2] <= 2_000_000_000)
     }
 
     @Test("MockBackoffClock tests run without real wall-clock delay")

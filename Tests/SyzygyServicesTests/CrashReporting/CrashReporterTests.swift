@@ -69,8 +69,8 @@ struct CrashReporterTests {
     @Test("circular buffer caps at 20 breadcrumbs")
     func circularBufferCapsAtTwenty() {
         let reporter = ConsoleCrashReporter()
-        for i in 1...25 {
-            reporter.leaveBreadcrumb(message: "Step \(i)")
+        for index in 1...25 {
+            reporter.leaveBreadcrumb(message: "Step \(index)")
         }
         let crumbs = reporter.currentBreadcrumbs()
         #expect(crumbs.count == 20)
@@ -96,5 +96,22 @@ struct CrashReporterTests {
         // reportCrash should not throw and should include breadcrumbs in output (no crash)
         reporter.reportCrash(message: "Unexpected nil", metadata: [:])
         #expect(true)
+    }
+
+    // MARK: - HI-06: PII redaction
+
+    @Test("setUserContext does not log userId or email in plain text")
+    func setUserContextRedactsPII() {
+        let reporter = ConsoleCrashReporter()
+        var captured: [String] = []
+        reporter.logger = { captured.append($0) }
+
+        reporter.setUserContext(userId: "test@example.com", email: "test@example.com")
+
+        let output = captured.joined()
+        #expect(!output.contains("test@example.com"),
+                "Plain-text PII must not appear in log output")
+        #expect(output.contains("<redacted>"),
+                "Redaction sentinel must appear in log output")
     }
 }
