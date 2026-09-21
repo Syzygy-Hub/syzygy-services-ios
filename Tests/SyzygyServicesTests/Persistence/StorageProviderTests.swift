@@ -122,6 +122,33 @@ struct StorageProviderTests {
         provider.remove(key)
     }
 
+    // MARK: - MED-10: Concurrency
+
+    @Test("concurrent reads and writes on same key produce valid state")
+    func concurrentReadsAndWritesProduceValidState() async {
+        let suiteName = "test.concurrent.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let provider = UserDefaultsStorageProvider(defaults: defaults)
+        let key = StorageKey<String>(identifier: "concurrent_key")
+
+        await withTaskGroup(of: Void.self) { group in
+            for index in 0..<5 {
+                group.addTask { provider.set("value_\(index)", for: key) }
+            }
+            for _ in 0..<5 {
+                group.addTask {
+                    if let value = provider.get(key) {
+                        #expect(value.hasPrefix("value_"))
+                    }
+                }
+            }
+        }
+        // Final state must be a valid written value (not corrupted data)
+        if let finalValue = provider.get(key) {
+            #expect(finalValue.hasPrefix("value_"))
+        }
+    }
+
     @Test("Keychain getOrThrow throws StorageServiceError on type mismatch")
     func keychainGetOrThrowThrowsOnTypeMismatch() {
         let service = "com.test.keychain.\(UUID().uuidString)"

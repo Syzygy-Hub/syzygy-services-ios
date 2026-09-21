@@ -50,18 +50,22 @@ public final class ConsoleCrashReporter: CrashReporter, @unchecked Sendable {
     /// Circular buffer of the most recent breadcrumbs (capped at `maxBreadcrumbs`).
     nonisolated(unsafe) private var breadcrumbs: [Breadcrumb] = []
 
+    /// Output sink — defaults to `print`. Override in tests to capture log lines.
+    nonisolated(unsafe) internal var logger: (String) -> Void = { print($0) }
+
     /// Initialises the reporter.
     public init() {}
 
     public func recordError(_ error: any Error, metadata extra: [String: String]) {
         let ctx = lock.withLock { mergedContext(with: extra) }
-        print("[CrashReporter] NON-FATAL error=\(error) context=\(ctx)")
+        logger("[CrashReporter] NON-FATAL error=\(error) context=\(RedactionPolicy.redactMap(ctx))")
     }
 
     public func reportCrash(message: String, metadata extra: [String: String]) {
         let (ctx, crumbs) = lock.withLock { (mergedContext(with: extra), breadcrumbs) }
         let crumbsDescription = crumbs.map { "[\($0.message)]" }.joined(separator: ", ")
-        print("[CrashReporter] CRASH message=\(message) context=\(ctx) breadcrumbs=[\(crumbsDescription)]")
+        let redacted = RedactionPolicy.redactMap(ctx)
+        logger("[CrashReporter] CRASH message=\(message) context=\(redacted) breadcrumbs=[\(crumbsDescription)]")
         // Stub: in production this would forward to a crash-reporting SDK.
     }
 
@@ -69,12 +73,14 @@ public final class ConsoleCrashReporter: CrashReporter, @unchecked Sendable {
         lock.withLock {
             userContext = (userId: userId, email: email)
         }
-        print("[CrashReporter] setUserContext userId=\(userId) email=\(email ?? "nil")")
+        let redactedUserId = RedactionPolicy.redact(key: "userId", value: userId)
+        let redactedEmail = email.map { RedactionPolicy.redact(key: "email", value: $0) } ?? "nil"
+        logger("[CrashReporter] setUserContext userId=\(redactedUserId) email=\(redactedEmail)")
     }
 
     public func setMetadata(key: String, value: String) {
         lock.withLock { metadata[key] = value }
-        print("[CrashReporter] setMetadata \(key)=\(value)")
+        logger("[CrashReporter] setMetadata \(key)=\(RedactionPolicy.redact(key: key, value: value))")
     }
 
     public func leaveBreadcrumb(message: String, metadata: [String: String]? = nil) {
@@ -84,12 +90,12 @@ public final class ConsoleCrashReporter: CrashReporter, @unchecked Sendable {
             }
             breadcrumbs.append(Breadcrumb(message: message, metadata: metadata ?? [:]))
         }
-        print("[CrashReporter] breadcrumb=\(message) metadata=\(metadata ?? [:])")
+        logger("[CrashReporter] breadcrumb=\(message) metadata=\(RedactionPolicy.redactMap(metadata ?? [:]))")
     }
 
     public func clearBreadcrumbs() {
         lock.withLock { breadcrumbs.removeAll() }
-        print("[CrashReporter] clearBreadcrumbs")
+        logger("[CrashReporter] clearBreadcrumbs")
     }
 
     /// Returns a snapshot of the stored metadata (for testing).

@@ -59,10 +59,9 @@ public final class UserDefaultsStorageProvider: SyzygyFoundation.StorageProvider
                 return try decoder.decode(T.self, from: data)
             } catch {
                 let storedType = Self.jsonTypeName(from: data)
-                throw StorageServiceError(
-                    message: "Type mismatch for key '\(key.identifier)': stored type is \(storedType), requested type is \(T.self)",
-                    underlyingError: error
-                )
+                let msg = "Type mismatch for key '\(key.identifier)': " +
+                    "stored type is \(storedType), requested type is \(T.self)"
+                throw StorageServiceError(message: msg, underlyingError: error)
             }
         }
     }
@@ -128,10 +127,9 @@ public final class KeychainStorageProvider: SyzygyFoundation.StorageProvider, @u
                 return try decoder.decode(T.self, from: data)
             } catch {
                 let storedType = Self.jsonTypeName(from: data)
-                throw StorageServiceError(
-                    message: "Type mismatch for key '\(key.identifier)': stored type is \(storedType), requested type is \(T.self)",
-                    underlyingError: error
-                )
+                let msg = "Type mismatch for key '\(key.identifier)': " +
+                    "stored type is \(storedType), requested type is \(T.self)"
+                throw StorageServiceError(message: msg, underlyingError: error)
             }
         }
     }

@@ -66,6 +66,7 @@ public actor URLSessionWebSocketProvider: WebSocketProvider {
     private let session: URLSession
     private let maxReconnectAttempts: Int
     private var task: URLSessionWebSocketTask?
+    private var receiveTask: Task<Void, Never>?
     private var _connectionState: WebSocketConnectionState = .disconnected
     private var continuations: [UUID: AsyncStream<WebSocketMessage>.Continuation] = [:]
     private var binaryContinuations: [UUID: AsyncStream<Data>.Continuation] = [:]
@@ -89,6 +90,8 @@ public actor URLSessionWebSocketProvider: WebSocketProvider {
     /// `WebSocketError.notConnected`.
     public func dispose() {
         isDisposed = true
+        receiveTask?.cancel()
+        receiveTask = nil
         disconnect()
         session.invalidateAndCancel()
     }
@@ -104,6 +107,8 @@ public actor URLSessionWebSocketProvider: WebSocketProvider {
     }
 
     public func disconnect() {
+        receiveTask?.cancel()
+        receiveTask = nil
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
         _connectionState = .disconnected
@@ -160,47 +165,57 @@ public actor URLSessionWebSocketProvider: WebSocketProvider {
     }
 
     private func startReceiving() {
-        Task {
+        receiveTask = Task {
             await receiveLoop(attempt: 0)
         }
     }
 
     private func receiveLoop(attempt: Int) async {
+        guard !Task.isCancelled else { return }
         guard let task, _connectionState == .connected else { return }
         do {
             let message = try await task.receive()
-            let wsMessage: WebSocketMessage
-            switch message {
-            case .string(let text): wsMessage = .text(text)
-            case .data(let data):
-                wsMessage = .data(data)
-                // Also fan out to dedicated binary consumers (mirrors Android binaryMessages channel)
-                for cont in binaryContinuations.values { cont.yield(data) }
-            @unknown default:
-                await receiveLoop(attempt: 0)
-                return
-            }
-            for cont in continuations.values { cont.yield(wsMessage) }
-            await receiveLoop(attempt: 0)
+            await dispatchMessage(message)
         } catch {
-            if attempt < maxReconnectAttempts, let url = currentURL {
-                let delay = pow(2.0, Double(attempt))
-                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                _connectionState = .connecting
-                let newTask = session.webSocketTask(with: url)
-                self.task = newTask
-                newTask.resume()
-                _connectionState = .connected
-                await receiveLoop(attempt: attempt + 1)
-            } else {
-                _connectionState = .disconnected
-                let conts = continuations
-                continuations.removeAll()
-                for cont in conts.values { cont.finish() }
-                let binConts = binaryContinuations
-                binaryContinuations.removeAll()
-                for cont in binConts.values { cont.finish() }
-            }
+            await handleReceiveError(error, attempt: attempt)
         }
+    }
+
+    /// Dispatches a received URLSessionWebSocketTask message to all registered consumers.
+    private func dispatchMessage(_ message: URLSessionWebSocketTask.Message) async {
+        switch message {
+        case .string(let text):
+            for cont in continuations.values { cont.yield(.text(text)) }
+            await receiveLoop(attempt: 0)
+        case .data(let bytes):
+            // Fan out to binary-only consumers (mirrors Android binaryMessages channel)
+            for cont in binaryContinuations.values { cont.yield(bytes) }
+            for cont in continuations.values { cont.yield(.data(bytes)) }
+            await receiveLoop(attempt: 0)
+        @unknown default:
+            await receiveLoop(attempt: 0)
+        }
+    }
+
+    /// Handles a receive error by reconnecting up to `maxReconnectAttempts` times.
+    private func handleReceiveError(_ error: any Error, attempt: Int) async {
+        guard attempt < maxReconnectAttempts, let url = currentURL else {
+            _connectionState = .disconnected
+            let conts = continuations
+            continuations.removeAll()
+            for cont in conts.values { cont.finish() }
+            let binConts = binaryContinuations
+            binaryContinuations.removeAll()
+            for cont in binConts.values { cont.finish() }
+            return
+        }
+        let delay = pow(2.0, Double(attempt))
+        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        _connectionState = .connecting
+        let newTask = session.webSocketTask(with: url)
+        self.task = newTask
+        newTask.resume()
+        _connectionState = .connected
+        await receiveLoop(attempt: attempt + 1)
     }
 }

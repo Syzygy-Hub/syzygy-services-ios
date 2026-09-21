@@ -1,4 +1,4 @@
-[![iOS](https://img.shields.io/badge/iOS-Swift-7F77DD?style=flat)](https://developer.apple.com/ios/) [![Swift](https://img.shields.io/badge/Swift-6.0-1D9E75?logo=swift&logoColor=white&style=flat)](https://swift.org) [![CI](https://img.shields.io/github/actions/workflow/status/Syzygy-Hub/syzygy-services-ios/ci.yml?label=ci&style=flat)](https://github.com/Syzygy-Hub/syzygy-services-ios/actions/workflows/ci.yml) [![Version](https://img.shields.io/badge/version-1.1.0-D85A30?style=flat)](https://github.com/Syzygy-Hub/syzygy-services-ios/releases) [![License](https://img.shields.io/badge/License-MIT-green?style=flat)](LICENSE)
+[![iOS](https://img.shields.io/badge/iOS-Swift-7F77DD?style=flat)](https://developer.apple.com/ios/) [![Swift](https://img.shields.io/badge/Swift-6.0-1D9E75?logo=swift&logoColor=white&style=flat)](https://swift.org) [![CI](https://img.shields.io/github/actions/workflow/status/Syzygy-Hub/syzygy-services-ios/ci.yml?label=ci&style=flat)](https://github.com/Syzygy-Hub/syzygy-services-ios/actions/workflows/ci.yml) [![Version](https://img.shields.io/badge/version-1.2.0-D85A30?style=flat)](https://github.com/Syzygy-Hub/syzygy-services-ios/releases) [![License](https://img.shields.io/badge/License-MIT-green?style=flat)](LICENSE)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Syzygy-Hub/.github/main/brand/assets/banners/syzygy-banner-dark-1200.png">
@@ -34,7 +34,7 @@ Add the dependency in your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Syzygy-Hub/syzygy-services-ios", from: "1.1.0")
+    .package(url: "https://github.com/Syzygy-Hub/syzygy-services-ios", from: "1.2.0")
 ]
 ```
 
@@ -63,7 +63,7 @@ Then add `SyzygyServices` to your target's dependencies:
 
 | Package | Version |
 |---|---|
-| syzygy-foundation-ios | 1.1.0 |
+| syzygy-foundation-ios | 1.2.0 |
 
 ---
 

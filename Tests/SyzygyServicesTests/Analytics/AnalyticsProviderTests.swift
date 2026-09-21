@@ -59,6 +59,23 @@ struct AnalyticsProviderTests {
         #expect(props?["session_id"] == provider.sessionId)
     }
 
+    // MARK: - HI-06: PII redaction
+
+    @Test("identify does not log userId in plain text")
+    func identifyRedactsUserId() {
+        let provider = ConsoleAnalyticsProvider()
+        var captured: [String] = []
+        provider.logger = { captured.append($0) }
+
+        provider.identify(userId: "test@example.com", traits: ["email": "test@example.com"])
+
+        let output = captured.joined()
+        #expect(!output.contains("test@example.com"),
+                "Plain-text PII must not appear in log output")
+        #expect(output.contains("<redacted>"),
+                "Redaction sentinel must appear in log output")
+    }
+
     @Test("session_id changes after reset() and new events carry the new session_id")
     func sessionIdChangesAfterReset() {
         let provider = ConsoleAnalyticsProvider()

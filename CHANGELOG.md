@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-19
+
+### Fixed
+- `NetworkClient`: session invalidation only when client owns the session (`ownsSession` flag)
+- `WebSocketProvider`: receive loop `Task` handle stored and cancelled on disconnect/dispose — no more leaked tasks
+- `RedactionPolicy`: removed dead code in `redactMap()`
+
+### Changed
+- Biometric stubs moved from protocol extension to concrete type body — prepares for Foundation v1.2.0 biometric promotion
+- PII redaction via `RedactionPolicy` — email, userId, traits, token and other sensitive keys redacted at the log sink
+- Header redaction is now case-insensitive and covers `authorization`, `cookie`, `x-api-key`, `proxy-authorization`
+- Canonical backoff policy: 500ms base, 2.0× multiplier, full jitter, 8 000ms cap, max 3 retries
+- Foundation dependency updated to 1.2.0
+
 ## [1.1.0] - 2026-09-13
 
 ### Added
@@ -55,5 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CrashReporter protocol and console crash logging stub
 - WebSocketProvider protocol and URLSessionWebSocketTask WebSocket stub
 
+[Unreleased]: https://github.com/Syzygy-Hub/syzygy-services-ios/compare/1.2.0...HEAD
+[1.2.0]: https://github.com/Syzygy-Hub/syzygy-services-ios/compare/1.1.0...1.2.0
 [1.1.0]: https://github.com/Syzygy-Hub/syzygy-services-ios/releases/tag/1.1.0
 [1.0.0]: https://github.com/Syzygy-Hub/syzygy-services-ios/releases/tag/1.0.0

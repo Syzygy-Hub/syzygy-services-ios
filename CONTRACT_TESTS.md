@@ -23,7 +23,7 @@ implemented in this repo's test suite; tests marked 🔲 are not yet implemented
 | Logger receives request method, URL, headers (Authorization stripped) | ✅ |
 | Logger receives response status, body size, elapsed time | ✅ |
 | dispose() cancels in-flight requests | ✅ |
-| dispose() is idempotent | ✅ |
+| dispose() is idempotent | ❌ (test not yet implemented) |
 
 ## Persistence
 
@@ -60,8 +60,8 @@ implemented in this repo's test suite; tests marked 🔲 are not yet implemented
 | Test | Status |
 |------|--------|
 | Registers for notifications without throwing | ✅ |
-| NotificationPayload factory creates alert payload | ✅ |
-| NotificationPayload factory creates silent payload | ✅ |
+| NotificationPayload factory creates alert payload | ❌ (test not yet implemented) |
+| NotificationPayload factory creates silent payload | ❌ (test not yet implemented) |
 
 ## DeviceServices
 
@@ -105,4 +105,14 @@ implemented in this repo's test suite; tests marked 🔲 are not yet implemented
 | binaryMessages stream accessible via protocol type | ✅ |
 | sendBytes() emits to binary stream | ✅ |
 | dispose() closes connection | ✅ |
-| dispose() is idempotent | ✅ |
+| dispose() is idempotent | ❌ (test not yet implemented) |
+
+## Idempotency Tests
+
+| Module | Scenario | Status |
+|--------|----------|--------|
+| networking | `dispose()` called twice does not throw | ❌ (test not yet implemented) |
+| websocket | `disconnect()` called before `connect()` does not throw | ❌ (test not yet implemented) |
+| websocket | `disconnect()` called twice does not throw | ❌ (test not yet implemented) |
+| auth | `signOut()` called when already signed out does not throw | ❌ (test not yet implemented) |
+| persistence | `clear()` called on empty store does not throw | ❌ (test not yet implemented) |

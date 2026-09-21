@@ -4,7 +4,6 @@ import Foundation
 
 @Suite("WebSocketProvider")
 struct WebSocketProviderTests {
-
     @Test("initial connectionState is disconnected")
     func initialStateIsDisconnected() async {
         let provider = URLSessionWebSocketProvider()
@@ -16,34 +15,17 @@ struct WebSocketProviderTests {
     func disconnectWithoutConnecting() async {
         let provider = URLSessionWebSocketProvider()
         await provider.disconnect()
-        let state = await provider.connectionState
-        #expect(state == .disconnected)
+        #expect(await provider.connectionState == .disconnected)
     }
 
     @Test("send text throws notConnected when disconnected")
     func sendThrowsWhenNotConnected() async {
-        let provider = URLSessionWebSocketProvider()
-        do {
-            try await provider.send(text: "hello")
-            Issue.record("Expected notConnected error")
-        } catch WebSocketError.notConnected {
-            #expect(true)
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        await assertThrowsNotConnected { try await $0.send(text: "hello") }
     }
 
     @Test("send data throws notConnected when disconnected")
     func sendDataThrowsWhenNotConnected() async {
-        let provider = URLSessionWebSocketProvider()
-        do {
-            try await provider.send(data: Data("binary".utf8))
-            Issue.record("Expected notConnected error")
-        } catch WebSocketError.notConnected {
-            #expect(true)
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        await assertThrowsNotConnected { try await $0.send(data: Data("binary".utf8)) }
     }
 
     @Test("messages() returns an AsyncStream that finishes on disconnect")
@@ -68,16 +50,7 @@ struct WebSocketProviderTests {
 
     @Test("send binary data throws notConnected when disconnected")
     func sendBinaryDataThrowsWhenNotConnected() async {
-        let provider = URLSessionWebSocketProvider()
-        let binaryPayload = Data([0xDE, 0xAD, 0xBE, 0xEF])
-        do {
-            try await provider.send(data: binaryPayload)
-            Issue.record("Expected notConnected error for binary send")
-        } catch WebSocketError.notConnected {
-            #expect(true)
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        await assertThrowsNotConnected { try await $0.send(data: Data([0xDE, 0xAD, 0xBE, 0xEF])) }
     }
 
     @Test("WebSocketMessage.data equality holds for identical payloads")
@@ -111,14 +84,14 @@ struct WebSocketProviderTests {
         let textMessage = WebSocketMessage.text("hello world")
         let binaryMessage = WebSocketMessage.data(Data([0x01, 0x02, 0x03]))
 
-        if case .text(let t) = textMessage {
-            #expect(t == "hello world")
+        if case .text(let textPayload) = textMessage {
+            #expect(textPayload == "hello world")
         } else {
             Issue.record("Expected .text case")
         }
 
-        if case .data(let d) = binaryMessage {
-            #expect(d == Data([0x01, 0x02, 0x03]))
+        if case .data(let dataPayload) = binaryMessage {
+            #expect(dataPayload == Data([0x01, 0x02, 0x03]))
         } else {
             Issue.record("Expected .data case")
         }
@@ -145,8 +118,8 @@ struct WebSocketProviderTests {
         }
 
         #expect(received.count == 1)
-        if case .data(let d) = received.first {
-            #expect(d == binaryPayload)
+        if case .data(let dataPayload) = received.first {
+            #expect(dataPayload == binaryPayload)
         } else {
             Issue.record("Expected .data message")
         }
@@ -290,6 +263,33 @@ struct WebSocketProviderTests {
         }
     }
 
+    // MARK: - Helpers
+
+    private func assertThrowsNotConnected(
+        _ body: (URLSessionWebSocketProvider) async throws -> Void
+    ) async {
+        let provider = URLSessionWebSocketProvider()
+        do {
+            try await body(provider)
+            Issue.record("Expected WebSocketError.notConnected")
+        } catch WebSocketError.notConnected {
+            #expect(true)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    // MARK: - MED-10: Concurrency
+
+    @Test("concurrent connect and disconnect do not crash")
+    func concurrentConnectDisconnectDoNotCrash() async {
+        let provider = URLSessionWebSocketProvider()
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { try? await provider.connect(to: URL(string: "wss://example.com")!) }
+            group.addTask { await provider.disconnect() }
+        }
+        #expect(true)
+    }
     @Test("messages() stream receives mixed text and binary messages in order")
     func messagesStreamReceivesMixedPayloads() async {
         let provider = InProcessMockWebSocketProvider()

@@ -110,6 +110,21 @@ public final class SyzygyAuthProvider: SyzygyFoundation.AuthProvider, @unchecked
         }
     }
 
+    // MARK: - Biometric Stubs
+
+    // TODO(v1.2.0): replace stub when Foundation promotes biometric to AuthProvider protocol
+    /// Returns whether biometric authentication is available on this device.
+    /// - Note: Always returns `false` in the stub. Wire to
+    ///   `LAContext.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics)` for real Face ID / Touch ID.
+    public func canUseBiometric() -> Bool { false }
+
+    // TODO(v1.2.0): replace stub when Foundation promotes biometric to AuthProvider protocol
+    /// Authenticates the user with biometrics (Face ID / Touch ID).
+    /// - Parameter reason: The localized reason shown to the user in the system prompt.
+    /// - Returns: `.authenticated` if successful, `.unauthenticated` if biometrics unavailable or failed.
+    /// - Note: Stub always returns `.unauthenticated`. Wire to `LAContext.evaluatePolicy` for real usage.
+    public func authenticateWithBiometric(reason: String) async -> AuthState { .unauthenticated }
+
     // MARK: - JWT Helpers
 
     /// Decodes the `exp` claim from a raw JWT string.
@@ -130,25 +145,6 @@ public final class SyzygyAuthProvider: SyzygyFoundation.AuthProvider, @unchecked
         }
         return Date(timeIntervalSince1970: exp)
     }
-}
-
-// MARK: - Biometric Auth Extension
-
-/// Default biometric stub implementations available to all `AuthProvider` conformers.
-///
-/// These defaults always return `false` / `.unauthenticated`.
-/// Wire `SyzygyAuthProvider` to `LAContext` for real Face ID / Touch ID support.
-public extension SyzygyFoundation.AuthProvider {
-    /// Returns whether biometric authentication is available on this device.
-    /// - Note: Always returns `false` in the stub. Wire to
-    ///   `LAContext.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics)` for real Face ID / Touch ID.
-    func canUseBiometric() -> Bool { false }
-
-    /// Authenticates the user with biometrics (Face ID / Touch ID).
-    /// - Parameter reason: The localized reason shown to the user in the system prompt.
-    /// - Returns: `.authenticated` if successful, `.unauthenticated` if biometrics unavailable or failed.
-    /// - Note: Stub always returns `.unauthenticated`. Wire to `LAContext.evaluatePolicy` for real usage.
-    func authenticateWithBiometric(reason: String) async -> AuthState { .unauthenticated }
 }
 
 // MARK: - Errors
