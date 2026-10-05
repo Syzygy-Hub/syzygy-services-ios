@@ -78,6 +78,30 @@ struct StorageProviderTests {
         #expect(provider.get(key2) == nil)
     }
 
+    // MARK: - Idempotency
+
+    @Test("UserDefaults clear() on empty store succeeds without throwing")
+    func userDefaultsClearOnEmptyStoreSucceeds() {
+        let suiteName = "test.storage.empty.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let provider = UserDefaultsStorageProvider(defaults: defaults)
+        // Must not throw or crash when store is already empty
+        provider.clear()
+        provider.clear()
+        let key = StorageKey<String>(identifier: "probe")
+        #expect(provider.get(key) == nil)
+    }
+
+    @Test("Keychain clear() on empty store succeeds without throwing")
+    func keychainClearOnEmptyStoreSucceeds() {
+        let provider = KeychainStorageProvider(service: "com.test.keychain.empty.\(UUID().uuidString)")
+        // Must not throw or crash when keychain service has no items
+        provider.clear()
+        provider.clear()
+        let key = StorageKey<String>(identifier: "probe")
+        #expect(provider.get(key) == nil)
+    }
+
     // MARK: - Item 2: Type-safe getOrThrow
 
     @Test("UserDefaults getOrThrow returns value when types match")

@@ -112,18 +112,29 @@ public final class SyzygyAuthProvider: SyzygyFoundation.AuthProvider, @unchecked
 
     // MARK: - Biometric Stubs
 
-    // TODO(v1.2.0): replace stub when Foundation promotes biometric to AuthProvider protocol
+    // TODO(Foundation-future): biometric implementation pending Foundation adding native biometric support
     /// Returns whether biometric authentication is available on this device.
     /// - Note: Always returns `false` in the stub. Wire to
     ///   `LAContext.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics)` for real Face ID / Touch ID.
     public func canUseBiometric() -> Bool { false }
 
-    // TODO(v1.2.0): replace stub when Foundation promotes biometric to AuthProvider protocol
+    // TODO(Foundation-future): biometric implementation pending Foundation adding native biometric support
     /// Authenticates the user with biometrics (Face ID / Touch ID).
     /// - Parameter reason: The localized reason shown to the user in the system prompt.
-    /// - Returns: `.authenticated` if successful, `.unauthenticated` if biometrics unavailable or failed.
-    /// - Note: Stub always returns `.unauthenticated`. Wire to `LAContext.evaluatePolicy` for real usage.
-    public func authenticateWithBiometric(reason: String) async -> AuthState { .unauthenticated }
+    /// - Returns: `true` if authentication succeeded, `false` if biometrics unavailable or failed.
+    /// - Note: Stub always returns `false`. Wire to `LAContext.evaluatePolicy` for real usage.
+    public func authenticateWithBiometric(reason: String) async -> Bool { false }
+
+    /// Attempts a background token refresh without requiring user interaction.
+    /// - Returns: `true` if the token was successfully refreshed; `false` otherwise.
+    public func refreshToken() async -> Bool {
+        do {
+            _ = try await refresh()
+            return true
+        } catch {
+            return false
+        }
+    }
 
     // MARK: - JWT Helpers
 
@@ -155,9 +166,6 @@ public enum AuthProviderError: Error, Sendable {
     case refreshNotConfigured
     /// The refresh response could not be decoded.
     case invalidRefreshResponse
-
-    // Legacy stub compatibility
-    case refreshNotImplemented
 }
 
 // MARK: - Legacy aliases
@@ -190,8 +198,8 @@ public final class JWTAuthProvider: @unchecked Sendable {
     public func canUseBiometric() -> Bool { false }
 
     /// Authenticates the user with biometrics.
-    /// Always returns `.unauthenticated` in this stub.
-    public func authenticateWithBiometric(reason: String) async -> AuthState { .unauthenticated }
+    /// Always returns `false` in this stub.
+    public func authenticateWithBiometric(reason: String) async -> Bool { false }
 }
 
 /// Alias preserved for source compatibility.

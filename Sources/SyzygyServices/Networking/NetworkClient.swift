@@ -69,7 +69,7 @@ public actor URLSessionNetworkClient: NetworkClientProtocol {
     private let maxRetries: Int
     private let clock: any BackoffClock
     private let logger: (any LoggerProtocol)?
-    private var isDisposed = false
+    nonisolated(unsafe) private var isDisposed = false
 
     /// Initialises the client with an injected URLSession.
     ///
@@ -124,7 +124,7 @@ public actor URLSessionNetworkClient: NetworkClientProtocol {
     /// After calling this, `execute(_:)` throws `NetworkServiceError` with code `.cancelled`.
     /// The underlying URLSession is only invalidated when the client owns it (i.e. it was
     /// created via `init(configuration:…)`). Injected sessions are left intact.
-    public func dispose() {
+    public nonisolated func dispose() {
         isDisposed = true
         if ownsSession {
             session.invalidateAndCancel()

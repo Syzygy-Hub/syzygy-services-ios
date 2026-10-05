@@ -125,106 +125,6 @@ struct WebSocketProviderTests {
         }
     }
 
-    // MARK: - binaryMessages() stream tests
-
-    @Test("binaryMessages() stream finishes on disconnect without yielding")
-    func binaryMessagesStreamFinishesOnDisconnect() async {
-        let provider = InProcessMockWebSocketProvider()
-        let stream = await provider.binaryMessages()
-        var iterator = stream.makeAsyncIterator()
-        await provider.finish()
-        let item = await iterator.next()
-        #expect(item == nil)
-    }
-
-    @Test("binaryMessages() stream receives injected binary frame")
-    func binaryMessagesStreamReceivesBinaryFrame() async {
-        let provider = InProcessMockWebSocketProvider()
-        let stream = await provider.binaryMessages()
-        let payload = Data([0xDE, 0xAD, 0xBE, 0xEF])
-
-        Task {
-            await provider.injectBinary(payload)
-            await provider.finish()
-        }
-
-        var received: [Data] = []
-        for await frame in stream {
-            received.append(frame)
-        }
-
-        #expect(received.count == 1)
-        #expect(received.first == payload)
-    }
-
-    @Test("binaryMessages() stream does not emit text messages")
-    func binaryMessagesStreamIgnoresTextMessages() async {
-        let provider = InProcessMockWebSocketProvider()
-        let stream = await provider.binaryMessages()
-
-        Task {
-            await provider.injectMessage(.text("hello"))
-            await provider.finish()
-        }
-
-        var received: [Data] = []
-        for await frame in stream {
-            received.append(frame)
-        }
-
-        // Text messages must NOT appear in binaryMessages() stream
-        #expect(received.isEmpty)
-    }
-
-    @Test("binaryMessages() stream receives multiple binary frames in order")
-    func binaryMessagesStreamReceivesFramesInOrder() async {
-        let provider = InProcessMockWebSocketProvider()
-        let stream = await provider.binaryMessages()
-        let frame1 = Data([0x01])
-        let frame2 = Data([0x02])
-        let frame3 = Data([0x03])
-
-        Task {
-            await provider.injectBinary(frame1)
-            await provider.injectBinary(frame2)
-            await provider.injectBinary(frame3)
-            await provider.finish()
-        }
-
-        var received: [Data] = []
-        for await frame in stream {
-            received.append(frame)
-        }
-
-        #expect(received == [frame1, frame2, frame3])
-    }
-
-    @Test("binaryMessages() and messages() streams are independent consumers")
-    func binaryAndMessagesStreamsAreIndependent() async {
-        let provider = InProcessMockWebSocketProvider()
-        let allMessages = await provider.messages()
-        let binStream = await provider.binaryMessages()
-        let binPayload = Data([0xCA, 0xFE])
-
-        Task {
-            await provider.injectMessage(.text("text-frame"))
-            await provider.injectBinary(binPayload)
-            await provider.finish()
-        }
-
-        var allReceived: [WebSocketMessage] = []
-        for await msg in allMessages { allReceived.append(msg) }
-
-        var binReceived: [Data] = []
-        for await frame in binStream { binReceived.append(frame) }
-
-        // messages() sees both text and binary wrapped in WebSocketMessage
-        #expect(allReceived.count == 2)
-        // binaryMessages() sees only binary frames
-        #expect(binReceived.count == 1)
-        #expect(binReceived.first == binPayload)
-    }
-
     // MARK: - Item 7: dispose()
 
     @Test("dispose() sets connectionState to disconnected")
@@ -263,20 +163,12 @@ struct WebSocketProviderTests {
         }
     }
 
-    // MARK: - Helpers
-
-    private func assertThrowsNotConnected(
-        _ body: (URLSessionWebSocketProvider) async throws -> Void
-    ) async {
+    @Test("dispose() called twice does not throw")
+    func disposeTwiceDoesNotThrow() async {
         let provider = URLSessionWebSocketProvider()
-        do {
-            try await body(provider)
-            Issue.record("Expected WebSocketError.notConnected")
-        } catch WebSocketError.notConnected {
-            #expect(true)
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        await provider.dispose()
+        await provider.dispose()
+        #expect(await provider.connectionState == .disconnected)
     }
 
     // MARK: - MED-10: Concurrency
@@ -315,6 +207,115 @@ struct WebSocketProviderTests {
     }
 }
 
+// MARK: - WebSocketProviderTests helpers and binaryMessages() stream tests
+extension WebSocketProviderTests {
+    private func assertThrowsNotConnected(
+        _ body: (URLSessionWebSocketProvider) async throws -> Void
+    ) async {
+        let provider = URLSessionWebSocketProvider()
+        do {
+            try await body(provider)
+            Issue.record("Expected WebSocketError.notConnected")
+        } catch WebSocketError.notConnected {
+            #expect(true)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+    @Test("binaryMessages() stream finishes on disconnect without yielding")
+    func binaryMessagesStreamFinishesOnDisconnect() async {
+        let provider = InProcessMockWebSocketProvider()
+        let stream = await provider.binaryMessages()
+        var iterator = stream.makeAsyncIterator()
+        await provider.finish()
+        let item = await iterator.next()
+        #expect(item == nil)
+    }
+    @Test("binaryMessages() stream receives injected binary frame")
+    func binaryMessagesStreamReceivesBinaryFrame() async {
+        let provider = InProcessMockWebSocketProvider()
+        let stream = await provider.binaryMessages()
+        let payload = Data([0xDE, 0xAD, 0xBE, 0xEF])
+
+        Task {
+            await provider.injectBinary(payload)
+            await provider.finish()
+        }
+
+        var received: [Data] = []
+        for await frame in stream {
+            received.append(frame)
+        }
+
+        #expect(received.count == 1)
+        #expect(received.first == payload)
+    }
+    @Test("binaryMessages() stream does not emit text messages")
+    func binaryMessagesStreamIgnoresTextMessages() async {
+        let provider = InProcessMockWebSocketProvider()
+        let stream = await provider.binaryMessages()
+
+        Task {
+            await provider.injectMessage(.text("hello"))
+            await provider.finish()
+        }
+
+        var received: [Data] = []
+        for await frame in stream {
+            received.append(frame)
+        }
+
+        // Text messages must NOT appear in binaryMessages() stream
+        #expect(received.isEmpty)
+    }
+    @Test("binaryMessages() stream receives multiple binary frames in order")
+    func binaryMessagesStreamReceivesFramesInOrder() async {
+        let provider = InProcessMockWebSocketProvider()
+        let stream = await provider.binaryMessages()
+        let frame1 = Data([0x01])
+        let frame2 = Data([0x02])
+        let frame3 = Data([0x03])
+
+        Task {
+            await provider.injectBinary(frame1)
+            await provider.injectBinary(frame2)
+            await provider.injectBinary(frame3)
+            await provider.finish()
+        }
+
+        var received: [Data] = []
+        for await frame in stream {
+            received.append(frame)
+        }
+
+        #expect(received == [frame1, frame2, frame3])
+    }
+    @Test("binaryMessages() and messages() streams are independent consumers")
+    func binaryAndMessagesStreamsAreIndependent() async {
+        let provider = InProcessMockWebSocketProvider()
+        let allMessages = await provider.messages()
+        let binStream = await provider.binaryMessages()
+        let binPayload = Data([0xCA, 0xFE])
+
+        Task {
+            await provider.injectMessage(.text("text-frame"))
+            await provider.injectBinary(binPayload)
+            await provider.finish()
+        }
+
+        var allReceived: [WebSocketMessage] = []
+        for await msg in allMessages { allReceived.append(msg) }
+
+        var binReceived: [Data] = []
+        for await frame in binStream { binReceived.append(frame) }
+
+        // messages() sees both text and binary wrapped in WebSocketMessage
+        #expect(allReceived.count == 2)
+        // binaryMessages() sees only binary frames
+        #expect(binReceived.count == 1)
+        #expect(binReceived.first == binPayload)
+    }
+}
 // MARK: - InProcessMockWebSocketProvider
 
 /// An actor-based WebSocket provider that injects messages directly into an AsyncStream.
