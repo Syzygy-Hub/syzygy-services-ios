@@ -127,4 +127,6 @@ actor RemoteConfigMockNetworkClient: NetworkClientProtocol {
         fetchCount += 1
         return NetworkResponse(statusCode: 200, data: responseData, headers: [:])
     }
+
+    nonisolated func dispose() {}
 }

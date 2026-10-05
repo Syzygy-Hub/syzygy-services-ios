@@ -15,7 +15,7 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(url: "https://github.com/Syzygy-Hub/syzygy-foundation-ios", from: "1.2.0")
+        .package(url: "https://github.com/Syzygy-Hub/syzygy-foundation-ios", from: "3.0.0")
     ],
     targets: [
         .target(

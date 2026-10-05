@@ -273,6 +273,21 @@ struct NetworkClientTests {
 
     // MARK: - Item 7: dispose()
 
+    @Test("dispose() called twice does not throw")
+    func disposeTwiceDoesNotThrow() async {
+        MockURLProtocol.requestHandler = { _ in makeResponse(statusCode: 200) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let client = URLSessionNetworkClient(
+            session: URLSession(configuration: config),
+            maxRetries: 0
+        )
+        await client.dispose()
+        await client.dispose()
+        // Both calls must complete without throwing or crashing
+        #expect(true)
+    }
+
     @Test("execute throws after dispose()")
     func executeThrowsAfterDispose() async throws {
         MockURLProtocol.requestHandler = { _ in makeResponse(statusCode: 200) }

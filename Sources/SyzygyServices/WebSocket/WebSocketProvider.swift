@@ -65,6 +65,7 @@ public actor URLSessionWebSocketProvider: WebSocketProvider {
 
     private let session: URLSession
     private let maxReconnectAttempts: Int
+    private let clock: any BackoffClock
     private var task: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var _connectionState: WebSocketConnectionState = .disconnected
@@ -77,9 +78,16 @@ public actor URLSessionWebSocketProvider: WebSocketProvider {
     /// - Parameters:
     ///   - session: The URLSession to use.
     ///   - maxReconnectAttempts: Maximum automatic reconnect attempts (default 3).
-    public init(session: URLSession = .shared, maxReconnectAttempts: Int = 3) {
+    ///   - clock: Back-off clock used for reconnect delays. Defaults to `TaskBackoffClock`
+    ///     (real `Task.sleep`). Inject a `MockBackoffClock` in tests for deterministic timing.
+    public init(
+        session: URLSession = .shared,
+        maxReconnectAttempts: Int = 3,
+        clock: any BackoffClock = TaskBackoffClock()
+    ) {
         self.session = session
         self.maxReconnectAttempts = maxReconnectAttempts
+        self.clock = clock
     }
 
     /// The current connection state.
@@ -210,7 +218,7 @@ public actor URLSessionWebSocketProvider: WebSocketProvider {
             return
         }
         let delay = pow(2.0, Double(attempt))
-        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        try? await clock.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
         _connectionState = .connecting
         let newTask = session.webSocketTask(with: url)
         self.task = newTask

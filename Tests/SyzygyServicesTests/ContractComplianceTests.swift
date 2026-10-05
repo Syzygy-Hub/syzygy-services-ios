@@ -190,4 +190,6 @@ actor ContractComplianceMockNetworkClient: NetworkClientProtocol {
     func execute(_ request: NetworkRequest) async throws -> NetworkResponse {
         NetworkResponse(statusCode: 200, data: Data("{}".utf8), headers: [:])
     }
+
+    nonisolated func dispose() {}
 }

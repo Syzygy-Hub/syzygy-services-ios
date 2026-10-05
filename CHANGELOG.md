@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-06
+
+### Changed
+- CI migrated from inline workflow to Syzygy-Hub reusable workflow (`ios-ci.yml`)
+- Foundation dependency constraint updated to `>=3.0.0`
+
+### Fixed
+- Biometric TODO comments re-tagged to `TODO(Foundation-future)`
+- `AuthProviderError.refreshNotImplemented` dead enum case removed
+- WebSocket reconnect delay now uses injectable `BackoffClock`
+- Updated for Foundation 3.0.0 protocol changes (`authenticateWithBiometric` return type, `refreshToken()`, `dispose()`)
+
+---
+
 ## [1.2.0] - 2026-09-19
 
 ### Fixed
@@ -69,7 +83,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CrashReporter protocol and console crash logging stub
 - WebSocketProvider protocol and URLSessionWebSocketTask WebSocket stub
 
-[Unreleased]: https://github.com/Syzygy-Hub/syzygy-services-ios/compare/1.2.0...HEAD
+[Unreleased]: https://github.com/Syzygy-Hub/syzygy-services-ios/compare/3.0.0...HEAD
+[3.0.0]: https://github.com/Syzygy-Hub/syzygy-services-ios/compare/1.2.0...3.0.0
 [1.2.0]: https://github.com/Syzygy-Hub/syzygy-services-ios/compare/1.1.0...1.2.0
 [1.1.0]: https://github.com/Syzygy-Hub/syzygy-services-ios/releases/tag/1.1.0
 [1.0.0]: https://github.com/Syzygy-Hub/syzygy-services-ios/releases/tag/1.0.0

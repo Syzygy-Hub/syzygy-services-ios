@@ -189,13 +189,26 @@ struct AuthProviderTests {
         #expect(provider.canUseBiometric() == false)
     }
 
-    @Test("authenticateWithBiometric returns unauthenticated on stub")
-    func testAuthenticateWithBiometricReturnsUnauthenticated() async {
+    @Test("authenticateWithBiometric returns false on stub")
+    func testAuthenticateWithBiometricReturnsFalse() async {
         let provider = SyzygyAuthProvider(
             storage: KeychainStorageProvider(service: "com.test.auth.\(UUID().uuidString)")
         )
         let result = await provider.authenticateWithBiometric(reason: "Test")
-        #expect(result == .unauthenticated)
+        #expect(result == false)
+    }
+
+    // MARK: - Idempotency
+
+    @Test("signOut() when already signed out does not throw and remains unauthenticated")
+    func signOutWhenAlreadySignedOutDoesNotThrow() {
+        let provider = SyzygyAuthProvider(
+            storage: KeychainStorageProvider(service: "com.test.auth.\(UUID().uuidString)")
+        )
+        // Provider starts unauthenticated; calling signOut() twice must not throw
+        provider.signOut()
+        provider.signOut()
+        #expect(provider.state == .unauthenticated)
     }
 
     // MARK: - Legacy JWTAuthProvider
@@ -231,4 +244,6 @@ final class MockNetworkClient: NetworkClientProtocol, Sendable {
         }
         return NetworkResponse(statusCode: statusCode, data: responseData, headers: [:])
     }
+
+    func dispose() {}
 }

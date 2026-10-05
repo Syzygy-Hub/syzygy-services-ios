@@ -23,7 +23,7 @@ implemented in this repo's test suite; tests marked 🔲 are not yet implemented
 | Logger receives request method, URL, headers (Authorization stripped) | ✅ |
 | Logger receives response status, body size, elapsed time | ✅ |
 | dispose() cancels in-flight requests | ✅ |
-| dispose() is idempotent | ❌ (test not yet implemented) |
+| dispose() is idempotent | ✅ |
 
 ## Persistence
 
@@ -105,14 +105,14 @@ implemented in this repo's test suite; tests marked 🔲 are not yet implemented
 | binaryMessages stream accessible via protocol type | ✅ |
 | sendBytes() emits to binary stream | ✅ |
 | dispose() closes connection | ✅ |
-| dispose() is idempotent | ❌ (test not yet implemented) |
+| dispose() is idempotent | ✅ |
 
 ## Idempotency Tests
 
 | Module | Scenario | Status |
 |--------|----------|--------|
-| networking | `dispose()` called twice does not throw | ❌ (test not yet implemented) |
-| websocket | `disconnect()` called before `connect()` does not throw | ❌ (test not yet implemented) |
+| networking | `dispose()` called twice does not throw | ✅ |
+| websocket | `disconnect()` called before `connect()` does not throw | ✅ |
 | websocket | `disconnect()` called twice does not throw | ❌ (test not yet implemented) |
-| auth | `signOut()` called when already signed out does not throw | ❌ (test not yet implemented) |
-| persistence | `clear()` called on empty store does not throw | ❌ (test not yet implemented) |
+| auth | `signOut()` called when already signed out does not throw | ✅ |
+| persistence | `clear()` called on empty store does not throw | ✅ |
